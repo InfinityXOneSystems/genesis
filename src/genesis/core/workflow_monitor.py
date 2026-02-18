@@ -7,6 +7,7 @@ provides diagnostic information for the healing agent.
 
 import logging
 import os
+import urllib.request
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass
@@ -182,8 +183,6 @@ class WorkflowMonitor:
             Job logs as string
         """
         try:
-            # PyGithub doesn't have direct job log access, so we'll try to get it via API
-            import urllib.request
             url = f"https://api.github.com/repos/{self.owner}/{self.repo}/actions/jobs/{job_id}/logs"
             headers = {
                 "Authorization": f"Bearer {self.github_token}",
@@ -192,8 +191,14 @@ class WorkflowMonitor:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=30) as response:
                 return response.read().decode('utf-8')
+        except urllib.error.HTTPError as e:
+            logger.error(f"HTTP error fetching logs for job {job_id}: {e.code} {e.reason}")
+            return ""
+        except urllib.error.URLError as e:
+            logger.error(f"Network error fetching logs for job {job_id}: {e.reason}")
+            return ""
         except Exception as e:
-            logger.error(f"Failed to fetch logs for job {job_id}: {e}")
+            logger.error(f"Unexpected error fetching logs for job {job_id}: {e}")
             return ""
     
     def analyze_failure(self, run: WorkflowRun) -> WorkflowFailure:
