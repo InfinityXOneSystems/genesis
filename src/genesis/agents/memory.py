@@ -1,7 +1,7 @@
 """MemoryAgent - Maintains context using RAG (Retrieval-Augmented Generation)"""
 
 from typing import Any, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 from genesis.agents.base import BaseAgent, AgentContext
 
 
@@ -50,7 +50,7 @@ class MemoryAgent(BaseAgent):
         entry = {
             "key": key,
             "value": value,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "metadata": metadata or {},
         }
         

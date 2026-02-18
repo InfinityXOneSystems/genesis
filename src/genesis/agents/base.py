@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from genesis.utils import StructuredLogger
 
 
@@ -19,7 +19,7 @@ class AgentContext:
     def add_memory(self, key: str, value: Any) -> None:
         """Add to shared memory"""
         self.memory.append({
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "key": key,
             "value": value,
         })
@@ -60,5 +60,5 @@ class BaseAgent(ABC):
         return {
             "name": self.name,
             "status": self.status,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         }

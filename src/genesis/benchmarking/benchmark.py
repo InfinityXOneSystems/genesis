@@ -1,6 +1,6 @@
 """Benchmarking System - Compare against top open-source multi-agent systems"""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pathlib import Path
 from genesis.utils import setup_logging, save_json_report
 

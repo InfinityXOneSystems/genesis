@@ -2,7 +2,7 @@
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -35,7 +35,7 @@ def setup_logging(level: str = "INFO", log_file: Optional[Path] = None) -> loggi
 def save_json_report(data: Dict[str, Any], output_path: Path) -> None:
     """Save a JSON report with metadata"""
     report = {
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "version": "0.1.0",
         "data": data,
     }
@@ -65,7 +65,7 @@ class StructuredLogger:
         log_data = {
             "agent": self.name,
             "action": action,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             **details,
         }
         self.logger.info(json.dumps(log_data))
@@ -76,7 +76,7 @@ class StructuredLogger:
             "agent": self.name,
             "metric": metric,
             "value": value,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             **(context or {}),
         }
         self.logger.info(json.dumps(log_data))
