@@ -13,7 +13,7 @@
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "next": "^14.0.4",
+    "next": "^15.0.8",
     "@monaco-editor/react": "^4.6.0",
     "lucide-react": "^0.303.0",
     "framer-motion": "^10.16.16",
@@ -27,7 +27,7 @@
     "@types/react-dom": "^18.2.18",
     "typescript": "^5.3.3",
     "eslint": "^8.56.0",
-    "eslint-config-next": "^14.0.4"
+    "eslint-config-next": "^15.0.8"
   },
   "engines": {
     "node": ">=18.0.0",
