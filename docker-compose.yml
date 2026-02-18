@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # Genesis Core - Python Backend
+  genesis-core:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.core
+    container_name: genesis-core
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_URL=http://ollama:11434
+    volumes:
+      - ./src:/app/src
+      - ./genesis_manifest.json:/app/genesis_manifest.json
+    depends_on:
+      - redis
+      - qdrant
+      - ollama
+    networks:
+      - genesis-network
+    restart: unless-stopped
+
+  # Genesis Web - Next.js Frontend
+  genesis-web:
+    build:
+      context: ./src/frontend
+      dockerfile: ../../docker/Dockerfile.web
+    container_name: genesis-web
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://genesis-core:8000
+    volumes:
+      - ./src/frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - genesis-core
+    networks:
+      - genesis-network
+    restart: unless-stopped
+
+  # Qdrant - Vector Database for Agent Memory
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: genesis-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - genesis-network
+    restart: unless-stopped
+
+  # Ollama - Local LLM Inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: genesis-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - genesis-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Redis - Task Queue and Caching
+  redis:
+    image: redis:7-alpine
+    container_name: genesis-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - genesis-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+networks:
+  genesis-network:
+    driver: bridge
+
+volumes:
+  qdrant-data:
+  ollama-data:
+  redis-data:
