@@ -1,0 +1,6 @@
+replicaCount: 3
+image:
+  repository: genesis/genesis
+  tag: "0.1.0"
+genesis:
+  targetThreshold: 1.2
