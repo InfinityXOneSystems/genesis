@@ -8,9 +8,15 @@ on:
   schedule:
     - cron: '0 0 * * 0'  # Weekly
 
+permissions:
+  contents: read
+
 jobs:
   trivy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
       
@@ -29,6 +35,9 @@ jobs:
 
   dependency-review:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
