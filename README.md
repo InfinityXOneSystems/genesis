@@ -27,7 +27,7 @@ Genesis is a FAANG-grade, enterprise-level **autonomous software factory** that 
 Genesis consists of five core components:
 
 ### 1. Autonomous Loop (GitHub Actions)
-Scheduled workflow that runs every 6 hours, executing the Plan → Code → Validate → Deploy cycle.
+Scheduled workflow that runs every 6 hours, executing the Plan → Code → Validate → Heal → Deploy cycle with built-in self-healing capabilities.
 
 ### 2. Agent Core (Python)
 The brain of the system with specialized AI personas:
@@ -110,11 +110,79 @@ python src/genesis/core/loop.py code
 # Validate phase - run tests and checks
 python src/genesis/core/loop.py validate
 
+# Heal phase - auto-fix workflow failures
+python src/genesis/core/loop.py heal
+
 # Deploy phase - merge approved changes
 python src/genesis/core/loop.py deploy
 
 # Full cycle
 python src/genesis/core/loop.py full
+```
+
+## 🏥 Auto-Healing System
+
+Genesis includes a sophisticated **self-healing system** that automatically detects and fixes workflow failures:
+
+### Workflow Health Monitoring
+- 📊 Monitors all GitHub Actions workflows 24/7
+- 🔍 Detects failures in real-time
+- 📈 Tracks success rates and health metrics
+- 🎯 Categorizes failure types for targeted healing
+
+### Healing Strategies
+
+The healing agent implements specialized strategies for different failure types:
+
+| Failure Type | Auto-Fix Strategy | Success Rate |
+|--------------|-------------------|--------------|
+| **Test Failures** | Rerun with retry logic, analyze flakiness | High |
+| **Linting Issues** | Auto-format with black/isort, commit fixes | Very High |
+| **Dependency Conflicts** | Clear cache, reinstall, update versions | High |
+| **Security Vulnerabilities** | Update to patched versions automatically | Medium |
+| **Build Failures** | Retry build, fix common configuration issues | Medium |
+
+### Recursive Healing
+- 🔄 **Exponential Backoff**: Retries with increasing delays
+- 🎯 **Smart Recovery**: Learns from previous healing attempts
+- 🔁 **Continuous Monitoring**: Runs every 6 hours automatically
+- 📝 **Detailed Logging**: Tracks all healing operations and outcomes
+
+### Healing Workflow
+```mermaid
+graph TD
+    A[Detect Workflow Failure] --> B[Categorize Failure Type]
+    B --> C[Select Healing Strategy]
+    C --> D[Apply Fix]
+    D --> E{Success?}
+    E -->|Yes| F[Log Success]
+    E -->|No| G[Exponential Backoff]
+    G --> H{Max Retries?}
+    H -->|No| D
+    H -->|Yes| I[Log Failure]
+    F --> J[Monitor Next Cycle]
+    I --> J
+```
+
+### Health Metrics
+
+The system tracks comprehensive health metrics:
+- Total workflow runs (24h window)
+- Failed runs count
+- Success rate percentage
+- Health status: `healthy` (≥80%), `degraded` (50-80%), `critical` (<50%)
+
+### Manual Healing
+
+Force a healing cycle at any time:
+
+```bash
+# Check workflow health
+python -c "from src.genesis.core.workflow_monitor import get_workflow_monitor; \
+  print(get_workflow_monitor().get_workflow_health_status())"
+
+# Run healing cycle
+python src/genesis/core/loop.py heal
 ```
 
 ## 🤖 How It Works
@@ -130,7 +198,7 @@ graph LR
     E --> F[Run Tests]
     F --> G{Pass?}
     G -->|Yes| H[Auto-Merge]
-    G -->|No| I[Fix Issues]
+    G -->|No| I[Auto-Heal]
     I --> F
     H --> J[Update State]
     J --> A
@@ -148,10 +216,12 @@ PRs labeled `autonomous-verified` are automatically merged if:
 
 ### Autonomous Capabilities
 - ✨ Self-improving codebase
+- 🏥 **Auto-healing workflows** (NEW)
 - 🔄 Continuous integration and deployment
 - 🧪 Automated testing at all levels
 - 🔐 Security scanning and compliance
 - 📊 Real-time monitoring and metrics
+- 🔁 **Recursive error recovery** (NEW)
 
 ### Quality Assurance
 - Type-safe (Python type hints, TypeScript)
