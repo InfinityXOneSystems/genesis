@@ -65,8 +65,8 @@ jobs:
           from genesis.core.workflow_analyzer import workflow_analyzer
           # In real implementation, would analyze actual workflows
           print('Workflow analysis complete')
-          echo 'failures-found=false' >> $GITHUB_OUTPUT
           "
+          echo "failures-found=false" >> $GITHUB_OUTPUT
       
       - name: Upload Analysis Results
         uses: actions/upload-artifact@v4

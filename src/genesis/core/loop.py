@@ -260,7 +260,11 @@ def main():
             exit_code = validate_phase()
         # Always run diagnose and heal, even if validation fails
         diagnose_exit = diagnose_phase()
+        if diagnose_exit != 0:
+            logger.warning("Diagnose phase had issues but continuing...")
         heal_exit = heal_phase()
+        if heal_exit != 0:
+            logger.warning("Heal phase had issues but continuing...")
         # Continue to deploy only if previous phases succeeded
         if exit_code == 0:
             exit_code = deploy_phase()
