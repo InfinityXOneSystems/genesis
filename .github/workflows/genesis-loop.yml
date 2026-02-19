@@ -10,6 +10,15 @@ on:
         description: 'Target threshold (e.g., 1.2 for 20% improvement)'
         required: false
         default: '1.2'
+      max_iterations:
+        description: 'Max iterations (0 for unlimited, blank for default 50)'
+        required: false
+        default: ''
+      infinite_mode:
+        description: 'Enable infinite mode (continuous improvement without constraints)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   autonomous-loop:
@@ -41,7 +50,19 @@ jobs:
       
       - name: Run Autonomous Loop
         run: |
-          genesis loop --repo-path . --threshold ${{ inputs.threshold || '1.2' }}
+          LOOP_CMD="genesis loop --repo-path . --threshold ${{ inputs.threshold || '1.2' }}"
+          
+          if [ "${{ inputs.max_iterations }}" != "" ]; then
+            LOOP_CMD="$LOOP_CMD --max-iterations ${{ inputs.max_iterations }}"
+          fi
+          
+          if [ "${{ inputs.infinite_mode }}" == "true" ]; then
+            LOOP_CMD="$LOOP_CMD --infinite"
+            echo "🚀 Running in INFINITE MODE - will use full workflow timeout"
+          fi
+          
+          echo "Executing: $LOOP_CMD"
+          eval $LOOP_CMD
       
       - name: Upload Results
         uses: actions/upload-artifact@v3

@@ -55,14 +55,41 @@ Genesis continuously benchmarks against:
 
 ## 🔄 Autonomous Loop
 
+Genesis supports multiple operational modes:
+
+### Standard Mode
 ```python
-while system_score < target_threshold:
+while system_score < target_threshold and iteration < max_iterations:
     assess_against_benchmarks()
     generate_patch_proposals()
     run_sandbox_tests()
     auto_merge_if_safe()
     update_system_score()
 ```
+
+### ♾️ Infinite Mode (No Constraints)
+```python
+# Continuous improvement without artificial limits
+while True:  # Runs until externally stopped
+    assess_against_benchmarks()
+    generate_patch_proposals()
+    run_sandbox_tests()
+    auto_merge_if_safe()
+    update_system_score()
+```
+
+**Enable Infinite Mode:**
+```bash
+# CLI - Continuous autonomous improvement
+genesis loop --infinite
+
+# Or with custom threshold
+genesis loop --infinite --threshold 1.5
+
+# GitHub Actions - Use workflow_dispatch with infinite_mode: true
+```
+
+See [Infinite Mode Documentation](docs/INFINITE_MODE.md) for details on constraint-free operation.
 
 ## 🛠️ Installation
 

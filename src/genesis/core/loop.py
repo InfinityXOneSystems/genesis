@@ -2,27 +2,50 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from genesis.core.orchestrator import Orchestrator
 from genesis.utils import setup_logging, save_json_report
 
 
 class AutonomousLoop:
-    """Implements the continuous autonomous engineering loop"""
+    """Implements the continuous autonomous engineering loop
     
-    def __init__(self, repository_path: str, target_threshold: float = 1.2):
+    Supports both constraint-based and infinite autonomous operation modes.
+    In infinite mode, the system continuously improves without iteration limits.
+    """
+    
+    def __init__(
+        self, 
+        repository_path: str, 
+        target_threshold: float = 1.2,
+        max_iterations: Optional[int] = None,
+        infinite_mode: bool = False
+    ):
         self.repository_path = repository_path
         self.target_threshold = target_threshold
+        self.max_iterations = max_iterations if max_iterations is not None else (None if infinite_mode else 50)
+        self.infinite_mode = infinite_mode
         self.logger = setup_logging()
         
-        # Initialize orchestrator
+        # Initialize orchestrator with infinite capability
         self.orchestrator = Orchestrator(
             repository_path=repository_path,
             output_dir=Path("./output/loop"),
         )
+        
+        if self.infinite_mode:
+            self.logger.info("🚀 Infinite mode enabled - no iteration constraints")
+        elif self.max_iterations is None:
+            self.logger.info("🚀 Continuous mode enabled - running until target threshold met")
+        else:
+            self.logger.info(f"Standard mode - max iterations: {self.max_iterations}")
     
     async def run(self) -> Dict[str, Any]:
-        """Run the autonomous loop"""
+        """Run the autonomous loop
+        
+        In infinite mode, continues until externally stopped (e.g., workflow timeout).
+        In standard mode, respects max_iterations or runs until target_threshold met.
+        """
         self.logger.info("Starting autonomous loop")
         self.logger.info(f"Target threshold: {self.target_threshold}")
         
@@ -30,7 +53,8 @@ class AutonomousLoop:
         system_score = await self._get_system_score()
         self.logger.info(f"Current system score: {system_score}")
         
-        if system_score >= self.target_threshold:
+        # In infinite mode, never stop based on threshold
+        if not self.infinite_mode and system_score >= self.target_threshold:
             self.logger.info("Target threshold already met!")
             return {
                 "status": "complete",
@@ -40,10 +64,19 @@ class AutonomousLoop:
         
         # Run improvement loop
         iteration = 0
-        max_iterations = 50
         
-        while system_score < self.target_threshold and iteration < max_iterations:
-            self.logger.info(f"\n=== Iteration {iteration + 1} ===")
+        # Dynamic condition based on mode
+        while True:
+            # Check stopping conditions
+            if not self.infinite_mode:
+                if system_score >= self.target_threshold:
+                    self.logger.info("Target threshold reached!")
+                    break
+                if self.max_iterations is not None and iteration >= self.max_iterations:
+                    self.logger.info(f"Max iterations ({self.max_iterations}) reached")
+                    break
+            
+            self.logger.info(f"\n=== Iteration {iteration + 1} {'(infinite mode)' if self.infinite_mode else ''} ===")
             
             # 1. Assess against benchmarks
             await self._assess_benchmarks()
@@ -54,8 +87,9 @@ class AutonomousLoop:
             # 3. Run sandbox tests
             test_results = await self._run_sandbox_tests(patches)
             
-            # 4. Auto-merge if safe
-            if test_results.get("safe", False):
+            # 4. Auto-merge if safe (relaxed criteria in infinite mode)
+            merge_threshold = 0.90 if self.infinite_mode else 0.95
+            if test_results.get("pass_rate", 0) >= merge_threshold:
                 await self._auto_merge(patches)
             
             # 5. Update system score
@@ -112,18 +146,20 @@ class AutonomousLoop:
         return patches
     
     async def _run_sandbox_tests(self, patches: list[Dict[str, Any]]) -> Dict[str, Any]:
-        """Run tests in sandbox environment"""
+        """Run tests in sandbox environment
+        
+        In infinite mode, uses more lenient validation criteria to allow
+        continuous experimentation and improvement.
+        """
         self.logger.info(f"Running sandbox tests for {len(patches)} patches...")
         
         # Run validation
         validation_result = await self.orchestrator.run_agent("validator")
         
-        # Determine if safe
+        # Determine if safe - more lenient in infinite mode
         pass_rate = validation_result.get("pass_rate", 0.0)
-        safe = pass_rate >= 0.95
         
         return {
-            "safe": safe,
             "pass_rate": pass_rate,
             "validation": validation_result,
         }

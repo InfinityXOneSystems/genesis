@@ -15,6 +15,7 @@ class AgentContext:
     benchmarks: Dict[str, Any] = field(default_factory=dict)
     memory: List[Dict[str, Any]] = field(default_factory=list)
     metrics: Dict[str, float] = field(default_factory=dict)
+    config: Dict[str, Any] = field(default_factory=dict)
     
     def add_memory(self, key: str, value: Any) -> None:
         """Add to shared memory"""
@@ -30,6 +31,14 @@ class AgentContext:
             if entry["key"] == key:
                 return entry["value"]
         return None
+    
+    def get_config(self, key: str, default: Any = None) -> Any:
+        """Get a configuration value"""
+        return self.config.get(key, default)
+    
+    def set_config(self, key: str, value: Any) -> None:
+        """Set a configuration value"""
+        self.config[key] = value
 
 
 class BaseAgent(ABC):
