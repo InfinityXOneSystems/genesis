@@ -1,0 +1,456 @@
+name: PR Automation - Zero-Friction Pipeline
+
+# ---------------------------------------------------------------------------
+# Zero human intervention required at any stage.
+# Flow: Analyze → Resolve Conflicts → Validate → Auto Squash-Merge
+# ---------------------------------------------------------------------------
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  checks: write
+  statuses: write
+
+# Prevent concurrent runs for the same PR branch
+concurrency:
+  group: pr-automation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. ANALYZE – Detect conflicts, gather metadata, perform quick scan
+  # ─────────────────────────────────────────────────────────────────────────
+  analyze:
+    name: 🔍 Analyze PR
+    runs-on: ubuntu-latest
+
+    outputs:
+      has-conflicts: ${{ steps.detect.outputs.has-conflicts }}
+      pr-number: ${{ github.event.pull_request.number }}
+      head-branch: ${{ github.event.pull_request.head.ref }}
+      base-branch: ${{ github.event.pull_request.base.ref }}
+      files-changed: ${{ steps.detect.outputs.files-changed }}
+
+    steps:
+      - name: Checkout repository (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -q
+
+      - name: Detect conflicts and collect PR metadata
+        id: detect
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          BASE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          python - <<'EOF'
+          import os, subprocess, sys
+          sys.path.insert(0, "src")
+          from genesis.core.pr_automation import PRAutomation
+
+          automation = PRAutomation()
+          pr_number  = int(os.environ["PR_NUMBER"])
+          branch     = os.environ["HEAD_BRANCH"]
+          base       = os.environ["BASE_BRANCH"]
+
+          # Fetch base branch so we can compare
+          subprocess.run(["git", "fetch", "origin", base], check=False)
+
+          analysis = automation.analyze_pr(
+              pr_number=pr_number,
+              branch=branch,
+              base_branch=f"origin/{base}",
+              title="${{ github.event.pull_request.title }}",
+          )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"has-conflicts={'true' if analysis.has_conflicts else 'false'}\n")
+              fh.write(f"files-changed={analysis.files_changed}\n")
+
+          import json, pathlib
+          pathlib.Path("pr-analysis.json").write_text(
+              json.dumps(analysis.to_dict(), indent=2)
+          )
+          print("Analysis complete:", json.dumps(analysis.to_dict(), indent=2))
+          EOF
+
+      - name: Post analysis comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let analysis = {};
+            try { analysis = JSON.parse(fs.readFileSync('pr-analysis.json', 'utf8')); } catch {}
+            const conflicts = analysis.has_conflicts ? '⚠️ Conflicts detected' : '✅ No conflicts';
+            const files     = analysis.files_changed ?? '?';
+            const body = [
+              '## 🤖 Genesis PR Automation – Analysis',
+              '',
+              `| Item | Value |`,
+              `|------|-------|`,
+              `| Conflicts | ${conflicts} |`,
+              `| Files changed | ${files} |`,
+              `| Commits | ${(analysis.commits ?? []).length} |`,
+              `| Quality issues | ${(analysis.quality_issues ?? []).length} |`,
+              '',
+              '_Pipeline continuing…_',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Upload analysis artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-analysis
+          path: pr-analysis.json
+          retention-days: 3
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. RESOLVE CONFLICTS – Auto-resolve if conflicts were detected
+  # ─────────────────────────────────────────────────────────────────────────
+  resolve-conflicts:
+    name: 🔧 Resolve Conflicts
+    runs-on: ubuntu-latest
+    needs: [analyze]
+    if: needs.analyze.outputs.has-conflicts == 'true'
+
+    steps:
+      - name: Checkout head branch (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -q
+
+      - name: Configure Git
+        run: |
+          git config user.name  "Genesis Bot"
+          git config user.email "genesis-bot@infinityxonesystems.com"
+
+      - name: Auto-resolve conflicts
+        id: resolve
+        env:
+          BASE_BRANCH: ${{ needs.analyze.outputs.base-branch }}
+          HEAD_BRANCH: ${{ needs.analyze.outputs.head-branch }}
+          PR_NUMBER: ${{ needs.analyze.outputs.pr-number }}
+        run: |
+          git fetch origin "$BASE_BRANCH"
+          python - <<'EOF'
+          import os, sys, json, pathlib
+          sys.path.insert(0, "src")
+          from genesis.core.pr_automation import PRAutomation
+
+          automation  = PRAutomation()
+          base        = f"origin/{os.environ['BASE_BRANCH']}"
+          branch      = os.environ["HEAD_BRANCH"]
+
+          success, resolved = automation.resolve_conflicts(branch, base)
+          result = {"success": success, "resolved_files": resolved}
+          pathlib.Path("conflict-resolution.json").write_text(json.dumps(result, indent=2))
+          print(json.dumps(result, indent=2))
+          if not success:
+              raise SystemExit(1)
+          EOF
+
+      - name: Commit resolved files
+        run: |
+          if git diff --cached --quiet; then
+            echo "Nothing to commit after conflict resolution"
+          else
+            git commit -m "🔧 Auto-resolve merge conflicts [Genesis Bot]"
+            git push
+          fi
+
+      - name: Upload resolution artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: conflict-resolution
+          path: conflict-resolution.json
+          retention-days: 3
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. VALIDATE – Tests · Linting · Security scan · Format check
+  # ─────────────────────────────────────────────────────────────────────────
+  validate:
+    name: ✅ Validate Code
+    runs-on: ubuntu-latest
+    needs: [analyze]
+    # Run even if conflict resolution was skipped (no conflicts)
+    if: always() && needs.analyze.result == 'success'
+
+    outputs:
+      validation-passed: ${{ steps.gate.outputs.passed }}
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies (including dev tools)
+        run: |
+          pip install -r requirements.txt -q
+          pip install flake8 bandit black pylint -q
+
+      # ── 3a. Tests ──────────────────────────────────────────────────────
+      - name: Run test suite (pytest)
+        id: tests
+        run: |
+          python -m pytest tests/ -v --tb=short -q 2>&1 | tee test-results.txt
+          echo "tests_exit_code=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+        continue-on-error: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.txt
+          retention-days: 7
+
+      # ── 3b. Linting ────────────────────────────────────────────────────
+      - name: Run linter (flake8)
+        id: lint
+        run: |
+          python -m flake8 src/ \
+            --max-line-length=120 \
+            --extend-ignore=E501,W503 \
+            --count \
+            --statistics 2>&1 | tee lint-results.txt
+        continue-on-error: true
+
+      - name: Run formatter check (black)
+        id: format
+        run: |
+          python -m black --check --diff src/ 2>&1 | tee format-results.txt
+        continue-on-error: true
+
+      # ── 3c. Security scan ──────────────────────────────────────────────
+      - name: Run security scan (bandit)
+        id: security
+        run: |
+          python -m bandit -r src/ -ll -q -f txt 2>&1 | tee security-results.txt
+        continue-on-error: true
+
+      # ── 3d. Validation gate ────────────────────────────────────────────
+      - name: Evaluate validation gate
+        id: gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TESTS_EXIT_CODE: ${{ env.tests_exit_code }}
+        run: |
+          python - <<'EOF'
+          import sys, os, re, pathlib
+
+          def read(path):
+              try:
+                  return pathlib.Path(path).read_text()
+              except Exception:
+                  return ""
+
+          # Use pytest exit code (0 = all passed) stored from the test step
+          tests_exit = int(os.environ.get("TESTS_EXIT_CODE", "1"))
+          tests_ok = tests_exit == 0
+
+          lint_output = read("lint-results.txt")
+          # flake8 exits 0 when clean; presence of violation lines means failure
+          lint_ok     = not any(re.match(r"src/", line) for line in lint_output.splitlines())
+          sec_output  = read("security-results.txt")
+          sec_ok      = "Severity: High" not in sec_output
+
+          passed = tests_ok and lint_ok and sec_ok
+          print(f"tests={tests_ok} lint={lint_ok} security={sec_ok} => passed={passed}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write(f"passed={'true' if passed else 'false'}\n")
+          EOF
+
+      - name: Upload all validation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-results
+          path: |
+            test-results.txt
+            lint-results.txt
+            format-results.txt
+            security-results.txt
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 4. AUTO SQUASH-MERGE – Merge into base when all checks pass
+  # ─────────────────────────────────────────────────────────────────────────
+  auto-squash-merge:
+    name: 🚀 Auto Squash-Merge
+    runs-on: ubuntu-latest
+    needs: [analyze, validate]
+    # Only merge when validation gate passed AND no unresolved conflicts
+    if: |
+      always() &&
+      needs.validate.result == 'success' &&
+      needs.validate.outputs.validation-passed == 'true' &&
+      (needs.analyze.outputs.has-conflicts == 'false' || needs.resolve-conflicts.result == 'success')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Squash-merge PR via GitHub API
+        id: merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ github.event.pull_request.number }};
+            const title    = `${{ github.event.pull_request.title }}`;
+
+            // Build a clean squash commit message
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              pull_number: prNumber,
+            });
+            const commitList = commits
+              .map(c => `  * ${c.commit.message.split('\n')[0]}`)
+              .join('\n');
+            const commitMessage = [
+              `Squashed commits from PR #${prNumber}:`,
+              '',
+              commitList,
+              '',
+              'Automatically merged by Genesis PR Automation.',
+              '✅ Tests passed  ✅ Linting clean  ✅ Security scan clean',
+            ].join('\n');
+
+            try {
+              const { data: mergeResult } = await github.rest.pulls.merge({
+                owner:          context.repo.owner,
+                repo:           context.repo.repo,
+                pull_number:    prNumber,
+                merge_method:   'squash',
+                commit_title:   `🤖 Auto-merge: ${title} (#${prNumber})`,
+                commit_message: commitMessage,
+              });
+
+              console.log('✅ PR merged:', mergeResult.sha);
+              core.setOutput('sha', mergeResult.sha);
+              core.setOutput('merged', 'true');
+            } catch (err) {
+              console.error('Merge failed:', err.message);
+              core.setOutput('merged', 'false');
+              core.setFailed(err.message);
+            }
+
+      - name: Post merge success comment
+        if: steps.merge.outputs.merged == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              issue_number: ${{ github.event.pull_request.number }},
+              body: [
+                '## 🤖 Genesis PR Automation – Merged',
+                '',
+                `**Commit:** \`${{ steps.merge.outputs.sha }}\``,
+                '',
+                '| Check | Result |',
+                '|-------|--------|',
+                '| 🔍 Analysis | ✅ passed |',
+                '| 🔧 Conflict resolution | ✅ passed |',
+                '| 🧪 Tests | ✅ passed |',
+                '| 🧹 Linting | ✅ passed |',
+                '| 🔒 Security scan | ✅ passed |',
+                '| 🚀 Auto squash-merge | ✅ complete |',
+                '',
+                '_Zero human intervention. Zero friction. Zero bottleneck._',
+              ].join('\n'),
+            });
+
+      - name: Delete head branch after merge
+        if: steps.merge.outputs.merged == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                ref:   `heads/${{ github.event.pull_request.head.ref }}`,
+              });
+              console.log('Branch deleted.');
+            } catch (err) {
+              console.warn('Branch deletion skipped:', err.message);
+            }
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 5. SUMMARY – Always runs, reports pipeline outcome
+  # ─────────────────────────────────────────────────────────────────────────
+  summary:
+    name: 📊 Pipeline Summary
+    runs-on: ubuntu-latest
+    needs: [analyze, validate, auto-squash-merge]
+    if: always()
+
+    steps:
+      - name: Generate step summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const results = {
+              analyze:           '${{ needs.analyze.result }}',
+              validate:          '${{ needs.validate.result }}',
+              'auto-squash-merge': '${{ needs.auto-squash-merge.result }}',
+            };
+            const icon = r => r === 'success' ? '✅' : r === 'skipped' ? '⏭️' : '❌';
+            const rows = Object.entries(results)
+              .map(([k, v]) => `| ${k} | ${icon(v)} ${v} |`)
+              .join('\n');
+            const summary = [
+              '# 🤖 Genesis PR Automation Summary',
+              '',
+              `**PR:** #${{ github.event.pull_request.number }}`,
+              `**Branch:** \`${{ github.event.pull_request.head.ref }}\` → \`${{ github.event.pull_request.base.ref }}\``,
+              `**Time:** ${new Date().toUTCString()}`,
+              '',
+              '| Stage | Result |',
+              '|-------|--------|',
+              rows,
+            ].join('\n');
+            await core.summary.addRaw(summary).write();
