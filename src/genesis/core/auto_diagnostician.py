@@ -8,7 +8,7 @@ and identifies root causes across repositories.
 import logging
 import re
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 
@@ -47,7 +47,7 @@ class DiagnosisResult:
         self.evidence = evidence
         self.affected_files = affected_files
         self.recommendations = recommendations
-        self.diagnosed_at = datetime.utcnow().isoformat()
+        self.diagnosed_at = datetime.now(timezone.utc).isoformat()
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -425,7 +425,7 @@ class AutoDiagnostician:
         
         health_report = {
             "repository": str(repo_path),
-            "checked_at": datetime.utcnow().isoformat(),
+            "checked_at": datetime.now(timezone.utc).isoformat(),
             "overall_health": "healthy",
             "issues_found": [],
             "checks_performed": []

@@ -8,7 +8,7 @@ quality gates for the Genesis system.
 import logging
 import subprocess
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from enum import Enum
 
@@ -41,7 +41,7 @@ class ValidationResult:
         self.tests_failed = tests_failed
         self.quality_score = quality_score
         self.issues_found = issues_found
-        self.validated_at = datetime.utcnow().isoformat()
+        self.validated_at = datetime.now(timezone.utc).isoformat()
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""

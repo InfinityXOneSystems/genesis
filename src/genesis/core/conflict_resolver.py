@@ -10,7 +10,7 @@ import re
 import subprocess
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class ConflictResolutionResult:
         self.strategy_used = strategy_used
         self.manual_review_needed = manual_review_needed
         self.error_message = error_message
-        self.resolved_at = datetime.utcnow().isoformat()
+        self.resolved_at = datetime.now(timezone.utc).isoformat()
     
     def to_dict(self) -> Dict:
         """Convert to dictionary."""

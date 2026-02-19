@@ -8,7 +8,7 @@ identifies failures, and provides intelligent insights.
 import logging
 import re
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -125,7 +125,7 @@ class WorkflowAnalyzer:
             "workflow_name": workflow_name,
             "run_id": run_id,
             "status": status,
-            "analyzed_at": datetime.utcnow().isoformat(),
+            "analyzed_at": datetime.now(timezone.utc).isoformat(),
             "failures": [],
             "category": None,
             "root_cause": None,
