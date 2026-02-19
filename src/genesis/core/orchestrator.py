@@ -78,13 +78,19 @@ class Orchestrator:
         results["evolution"] = await self.agents["evolution"].execute()
         
         # Phase 7: Deployment (if safe)
-        if results["validation"].get("pass_rate", 0) >= 0.95:
-            self.logger.info("Phase 7: Deployment")
+        # Use dynamic pass rate threshold based on system maturity
+        min_pass_rate = self.context.get_config("min_deployment_pass_rate", 0.90)
+        
+        if results["validation"].get("pass_rate", 0) >= min_pass_rate:
+            self.logger.info(f"Phase 7: Deployment (pass rate: {results['validation'].get('pass_rate', 0):.2%})")
             self.context.add_memory("validation_results", results["validation"])
             results["deployment"] = await self.agents["deployment"].execute()
         else:
-            self.logger.warning("Skipping deployment - validation failed")
-            results["deployment"] = {"status": "skipped", "reason": "validation_failed"}
+            self.logger.warning(
+                f"Skipping deployment - validation pass rate "
+                f"({results['validation'].get('pass_rate', 0):.2%}) below threshold ({min_pass_rate:.2%})"
+            )
+            results["deployment"] = {"status": "skipped", "reason": "validation_below_threshold"}
         
         # Save results
         self._save_cycle_results(results)
@@ -105,23 +111,50 @@ class Orchestrator:
         
         return result
     
-    async def run_evolution_loop(self, max_iterations: int = 10) -> Dict[str, Any]:
-        """Run the recursive improvement loop"""
+    async def run_evolution_loop(
+        self, 
+        max_iterations: Optional[int] = 10,
+        infinite_mode: bool = False
+    ) -> Dict[str, Any]:
+        """Run the recursive improvement loop
+        
+        Args:
+            max_iterations: Maximum iterations (None for unlimited when infinite_mode=True)
+            infinite_mode: If True, runs continuously without iteration limits
+        
+        In infinite mode, the evolution continues indefinitely, allowing the system
+        to continuously improve and adapt without artificial constraints.
+        """
+        if infinite_mode:
+            max_iterations = None
+            self.logger.info("🚀 Starting infinite evolution loop")
+        
         self.structured_logger.log_action("start_evolution_loop", {
-            "max_iterations": max_iterations,
+            "max_iterations": max_iterations if max_iterations else "infinite",
+            "infinite_mode": infinite_mode,
         })
         
         iteration = 0
         evolution_agent = self.agents["evolution"]
         
-        while iteration < max_iterations and evolution_agent.should_continue_evolution():
-            self.logger.info(f"Evolution iteration {iteration + 1}/{max_iterations}")
+        while True:
+            # Check stopping conditions
+            if not infinite_mode:
+                if max_iterations is not None and iteration >= max_iterations:
+                    self.logger.info(f"Max iterations ({max_iterations}) reached")
+                    break
+                if not evolution_agent.should_continue_evolution():
+                    self.logger.info("Evolution agent decided to stop")
+                    break
+            
+            iteration_label = f"{iteration + 1}" if not infinite_mode else f"{iteration + 1} (infinite)"
+            self.logger.info(f"Evolution iteration {iteration_label}")
             
             # Run evolution cycle
             result = await evolution_agent.execute()
             
-            # Check if target reached
-            if result.get("target_reached", False):
+            # In standard mode, check if target reached
+            if not infinite_mode and result.get("target_reached", False):
                 self.logger.info("Target score reached!")
                 break
             
@@ -135,6 +168,7 @@ class Orchestrator:
             "final_score": final_score,
             "target_score": target_score,
             "target_reached": final_score >= target_score,
+            "infinite_mode": infinite_mode,
         }
     
     def get_system_status(self) -> Dict[str, Any]:

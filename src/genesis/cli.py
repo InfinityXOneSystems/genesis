@@ -43,6 +43,17 @@ def main() -> None:
         default=1.2,
         help="Target threshold (default: 1.2 = 20%% improvement)",
     )
+    loop_parser.add_argument(
+        "--max-iterations",
+        type=int,
+        default=None,
+        help="Maximum iterations (default: 50, use 0 or omit for unlimited)",
+    )
+    loop_parser.add_argument(
+        "--infinite",
+        action="store_true",
+        help="Enable infinite mode - continuous improvement without constraints",
+    )
     
     # Scan command
     scan_parser = subparsers.add_parser("scan", help="Scan repository")
@@ -102,11 +113,23 @@ async def cmd_run(args: argparse.Namespace) -> None:
 async def cmd_loop(args: argparse.Namespace) -> None:
     """Run the autonomous improvement loop"""
     logger = setup_logging()
-    logger.info("Starting Genesis autonomous loop")
+    
+    if args.infinite:
+        logger.info("🚀 Starting Genesis autonomous loop in INFINITE MODE")
+        logger.warning("⚠️  Infinite mode enabled - will run until externally stopped")
+    else:
+        logger.info("Starting Genesis autonomous loop")
+    
+    # Handle max_iterations
+    max_iterations = args.max_iterations
+    if max_iterations is not None and max_iterations == 0:
+        max_iterations = None  # Treat 0 as unlimited
     
     loop = AutonomousLoop(
         repository_path=args.repo_path,
         target_threshold=args.threshold,
+        max_iterations=max_iterations,
+        infinite_mode=args.infinite,
     )
     
     result = await loop.run()
@@ -116,6 +139,8 @@ async def cmd_loop(args: argparse.Namespace) -> None:
     print(f"Final Score: {result['final_score']:.2f}")
     print(f"Target: {result['target_threshold']}")
     print(f"Threshold Met: {result['threshold_met']}")
+    if args.infinite:
+        print("🚀 Infinite mode was active")
 
 
 def cmd_scan(args: argparse.Namespace) -> None:
