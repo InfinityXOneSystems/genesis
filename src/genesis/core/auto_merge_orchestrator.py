@@ -13,7 +13,7 @@ This module orchestrates the entire branch merging process including:
 
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Tuple
 import json
 
@@ -30,7 +30,7 @@ class AutoMergeOrchestrator:
         self.manager = BranchManager(repo_path)
         self.repo_path = Path(repo_path)
         self.results = {
-            "started_at": datetime.utcnow().isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
             "branches_analyzed": 0,
             "branches_merged": 0,
             "branches_failed": 0,
@@ -182,7 +182,7 @@ class AutoMergeOrchestrator:
         
         if not branches_to_process:
             print("\n✅ No branches need processing")
-            self.results["completed_at"] = datetime.utcnow().isoformat()
+            self.results["completed_at"] = datetime.now(timezone.utc).isoformat()
             return self.results
         
         # Step 3: Test all branches
@@ -196,7 +196,7 @@ class AutoMergeOrchestrator:
             self.cleanup_merged_branches(merge_results)
         
         # Step 6: Final summary
-        self.results["completed_at"] = datetime.utcnow().isoformat()
+        self.results["completed_at"] = datetime.now(timezone.utc).isoformat()
         
         print("\n" + "=" * 60)
         print("📊 FINAL SUMMARY")

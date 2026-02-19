@@ -13,7 +13,7 @@ import subprocess
 import json
 import re
 from typing import Dict, List, Tuple, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -154,7 +154,7 @@ class BranchManager:
         """Perform comprehensive branch analysis"""
         analysis = {
             "branch": branch,
-            "analyzed_at": datetime.utcnow().isoformat(),
+            "analyzed_at": datetime.now(timezone.utc).isoformat(),
             "commits": self.get_branch_commits(branch),
             "commit_count": 0,
             "has_conflicts": False,
@@ -286,7 +286,7 @@ class BranchManager:
     def generate_report(self, analyses: Dict[str, Dict]) -> str:
         """Generate a comprehensive report of branch analyses"""
         report = ["# 📊 Branch Analysis Report", ""]
-        report.append(f"**Generated:** {datetime.utcnow().isoformat()}")
+        report.append(f"**Generated:** {datetime.now(timezone.utc).isoformat()}")
         report.append("")
         report.append("## Summary")
         report.append("")
