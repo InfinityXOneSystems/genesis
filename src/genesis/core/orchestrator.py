@@ -9,7 +9,7 @@ import json
 import logging
 from typing import Dict, List, Optional, Any
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from .agent_team import agent_team, AgentPersona
@@ -47,8 +47,8 @@ class Task:
         self.priority = priority
         self.dependencies = dependencies or []
         self.status = TaskStatus.PENDING
-        self.created_at = datetime.utcnow().isoformat()
-        self.updated_at = datetime.utcnow().isoformat()
+        self.created_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(timezone.utc).isoformat()
         self.result: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
@@ -106,12 +106,12 @@ class GenesisOrchestrator:
                 "total_commits": 0,
                 "total_prs": 0
             },
-            "last_updated": datetime.utcnow().isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat()
         }
     
     def _save_manifest(self) -> None:
         """Save the current system state to manifest."""
-        self.system_state["last_updated"] = datetime.utcnow().isoformat()
+        self.system_state["last_updated"] = datetime.now(timezone.utc).isoformat()
         
         with open(self.manifest_path, 'w') as f:
             json.dump(self.system_state, f, indent=2)
@@ -127,7 +127,7 @@ class GenesisOrchestrator:
         dependencies: Optional[List[str]] = None
     ) -> Task:
         """Create a new task and add it to the queue."""
-        task_id = f"task_{len(self.tasks) + 1}_{int(datetime.utcnow().timestamp())}"
+        task_id = f"task_{len(self.tasks) + 1}_{int(datetime.now(timezone.utc).timestamp())}"
         
         task = Task(
             task_id=task_id,
@@ -159,7 +159,7 @@ class GenesisOrchestrator:
         
         task.assigned_persona = persona_id
         task.status = TaskStatus.IN_PROGRESS
-        task.updated_at = datetime.utcnow().isoformat()
+        task.updated_at = datetime.now(timezone.utc).isoformat()
         
         logger.info(f"Assigned task {task_id} to {persona.name}")
         return True
@@ -194,7 +194,7 @@ class GenesisOrchestrator:
             return False
         
         task.status = status
-        task.updated_at = datetime.utcnow().isoformat()
+        task.updated_at = datetime.now(timezone.utc).isoformat()
         
         if result:
             task.result = result
@@ -246,8 +246,8 @@ class GenesisOrchestrator:
         logger.info("=" * 80)
         
         cycle_results = {
-            "cycle_id": f"cycle_{int(datetime.utcnow().timestamp())}",
-            "started_at": datetime.utcnow().isoformat(),
+            "cycle_id": f"cycle_{int(datetime.now(timezone.utc).timestamp())}",
+            "started_at": datetime.now(timezone.utc).isoformat(),
             "tasks_processed": 0,
             "tasks_completed": 0,
             "tasks_failed": 0,
@@ -290,7 +290,7 @@ class GenesisOrchestrator:
             self.system_state["status"] = "active"
             self._save_manifest()
             
-            cycle_results["completed_at"] = datetime.utcnow().isoformat()
+            cycle_results["completed_at"] = datetime.now(timezone.utc).isoformat()
             
         except Exception as e:
             logger.error(f"Error in autonomous cycle: {e}", exc_info=True)

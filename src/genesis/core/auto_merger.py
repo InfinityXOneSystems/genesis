@@ -8,7 +8,7 @@ and manages the complete merge lifecycle.
 import logging
 import subprocess
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from enum import Enum
 
@@ -42,7 +42,7 @@ class MergeResult:
         self.squashed = squashed
         self.issues_closed = issues_closed or []
         self.error_message = error_message
-        self.merged_at = datetime.utcnow().isoformat()
+        self.merged_at = datetime.now(timezone.utc).isoformat()
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -354,7 +354,7 @@ class AutoMerger:
             "pr_number": pr_number,
             "scheduled": True,
             "delay_minutes": delay_minutes,
-            "scheduled_at": datetime.utcnow().isoformat()
+            "scheduled_at": datetime.now(timezone.utc).isoformat()
         }
     
     def bulk_merge_prs(

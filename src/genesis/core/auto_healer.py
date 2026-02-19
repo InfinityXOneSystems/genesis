@@ -9,7 +9,7 @@ import logging
 import re
 import subprocess
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from enum import Enum
 
@@ -47,7 +47,7 @@ class HealingResult:
         self.files_modified = files_modified
         self.validation_passed = validation_passed
         self.error_message = error_message
-        self.healed_at = datetime.utcnow().isoformat()
+        self.healed_at = datetime.now(timezone.utc).isoformat()
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""

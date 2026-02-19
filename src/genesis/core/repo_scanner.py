@@ -9,7 +9,7 @@ import os
 import logging
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class RepoScanner:
         
         analysis = {
             "repository": repo_full_name,
-            "analyzed_at": datetime.utcnow().isoformat(),
+            "analyzed_at": datetime.now(timezone.utc).isoformat(),
             "health_score": 0.0,
             "opportunities": [],
             "metrics": {}
