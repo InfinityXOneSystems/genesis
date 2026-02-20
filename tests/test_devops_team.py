@@ -15,6 +15,14 @@ from genesis.core.auto_healer import AutoHealer, HealingStrategy
 from genesis.core.conflict_resolver import ConflictResolver
 from genesis.core.auto_validator import AutoValidator, ValidationStatus
 from genesis.core.auto_merger import AutoMerger, MergeStatus
+from genesis.core.pr_automation import (
+    PRAutomation,
+    PRStatus,
+    ValidationCheckType,
+    PRAnalysis,
+    ValidationReport,
+    MergeReport,
+)
 
 
 class TestWorkflowAnalyzer:
@@ -362,3 +370,212 @@ def test_all_devops_agents_have_system_prompts():
         assert len(persona.system_prompt) > 100
         assert persona.expertise
         assert persona.responsibilities
+
+
+class TestPRAutomation:
+    """Tests for the zero-friction PRAutomation module."""
+
+    def test_initialization(self):
+        """Test PR automation initializes correctly."""
+        automation = PRAutomation()
+        assert automation is not None
+        assert automation.repo_path is not None
+
+    def test_pr_status_enum_values(self):
+        """Test PRStatus enum has required states."""
+        assert PRStatus.PENDING.value == "pending"
+        assert PRStatus.MERGED.value == "merged"
+        assert PRStatus.FAILED.value == "failed"
+        assert PRStatus.VALIDATION_PASSED.value == "validation_passed"
+        assert PRStatus.CONFLICTS_DETECTED.value == "conflicts_detected"
+
+    def test_validation_check_type_enum(self):
+        """Test ValidationCheckType enum covers all check types."""
+        types = {e.value for e in ValidationCheckType}
+        assert "tests" in types
+        assert "linting" in types
+        assert "security" in types
+        assert "type_check" in types
+        assert "format" in types
+
+    def test_pr_analysis_to_dict(self):
+        """Test PRAnalysis serialises to a complete dictionary."""
+        analysis = PRAnalysis(
+            pr_number=7,
+            title="Add feature X",
+            branch="feature/x",
+            base_branch="main",
+            has_conflicts=False,
+            conflicted_files=[],
+            files_changed=3,
+            commits=["abc123 Initial commit"],
+            quality_issues=[],
+        )
+        data = analysis.to_dict()
+        assert data["pr_number"] == 7
+        assert data["title"] == "Add feature X"
+        assert data["has_conflicts"] is False
+        assert data["files_changed"] == 3
+        assert "analyzed_at" in data
+
+    def test_pr_analysis_with_conflicts(self):
+        """Test PRAnalysis with conflicts present."""
+        analysis = PRAnalysis(
+            pr_number=8,
+            title="Conflicting PR",
+            branch="fix/conflict",
+            base_branch="main",
+            has_conflicts=True,
+            conflicted_files=["src/foo.py", "src/bar.py"],
+            files_changed=2,
+            commits=[],
+            quality_issues=["Syntax error in foo.py"],
+        )
+        data = analysis.to_dict()
+        assert data["has_conflicts"] is True
+        assert len(data["conflicted_files"]) == 2
+        assert len(data["quality_issues"]) == 1
+
+    def test_validation_report_passed(self):
+        """Test ValidationReport for a fully passing pipeline."""
+        report = ValidationReport(
+            passed=True,
+            checks={
+                "tests":    {"passed": True, "summary": "51 passed, 0 failed"},
+                "linting":  {"passed": True, "summary": "clean"},
+                "security": {"passed": True, "summary": "clean"},
+            },
+            issues=[],
+            quality_score=1.0,
+        )
+        data = report.to_dict()
+        assert data["passed"] is True
+        assert data["quality_score"] == 1.0
+        assert data["issues"] == []
+        assert "validated_at" in data
+
+    def test_validation_report_failed(self):
+        """Test ValidationReport for a failing pipeline."""
+        report = ValidationReport(
+            passed=False,
+            checks={
+                "tests":   {"passed": False, "summary": "2 failed"},
+                "linting": {"passed": True,  "summary": "clean"},
+            },
+            issues=["Tests failed: 2 failed"],
+            quality_score=0.5,
+        )
+        data = report.to_dict()
+        assert data["passed"] is False
+        assert data["quality_score"] == 0.5
+        assert len(data["issues"]) == 1
+
+    def test_merge_report_success(self):
+        """Test MergeReport for a successful squash-merge."""
+        report = MergeReport(
+            success=True,
+            pr_number=42,
+            commit_sha="deadbeef",
+            squashed=True,
+        )
+        data = report.to_dict()
+        assert data["success"] is True
+        assert data["pr_number"] == 42
+        assert data["commit_sha"] == "deadbeef"
+        assert data["squashed"] is True
+        assert data["error_message"] is None
+        assert "merged_at" in data
+
+    def test_merge_report_failure(self):
+        """Test MergeReport for a failed merge."""
+        report = MergeReport(
+            success=False,
+            pr_number=99,
+            commit_sha=None,
+            squashed=False,
+            error_message="Merge conflict unresolved",
+        )
+        data = report.to_dict()
+        assert data["success"] is False
+        assert data["error_message"] == "Merge conflict unresolved"
+
+    def test_apply_conflict_strategy_ours(self):
+        """Test conflict resolution keeps 'ours' side."""
+        automation = PRAutomation()
+        content = "before\n<<<<<<< HEAD\nours content\n=======\ntheirs content\n>>>>>>> feature\nafter\n"
+        resolved = automation._apply_conflict_strategy(content, "ours")
+        assert "ours content" in resolved
+        assert "theirs content" not in resolved
+        assert "<<<<<<" not in resolved
+
+    def test_apply_conflict_strategy_theirs(self):
+        """Test conflict resolution keeps 'theirs' side."""
+        automation = PRAutomation()
+        content = "before\n<<<<<<< HEAD\nours content\n=======\ntheirs content\n>>>>>>> feature\nafter\n"
+        resolved = automation._apply_conflict_strategy(content, "theirs")
+        assert "theirs content" in resolved
+        assert "ours content" not in resolved
+        assert "<<<<<<" not in resolved
+
+    def test_apply_conflict_strategy_larger(self):
+        """Test conflict resolution keeps the longer side."""
+        automation = PRAutomation()
+        # 'theirs' is longer → should be chosen
+        content = (
+            "<<<<<<< HEAD\n"
+            "short\n"
+            "=======\n"
+            "much longer theirs content here\n"
+            ">>>>>>> feature\n"
+        )
+        resolved = automation._apply_conflict_strategy(content, "larger")
+        assert "much longer theirs content here" in resolved
+
+    def test_calculate_quality_score_all_pass(self):
+        """Test quality score is 1.0 when all checks pass."""
+        automation = PRAutomation()
+        checks = {
+            "tests":    {"passed": True},
+            "linting":  {"passed": True},
+            "security": {"passed": True},
+        }
+        score = automation._calculate_quality_score(checks)
+        assert score == 1.0
+
+    def test_calculate_quality_score_partial(self):
+        """Test quality score is fractional when some checks fail."""
+        automation = PRAutomation()
+        checks = {
+            "tests":    {"passed": True},
+            "linting":  {"passed": False},
+            "security": {"passed": True},
+        }
+        score = automation._calculate_quality_score(checks)
+        assert abs(score - 2 / 3) < 0.01
+
+    def test_calculate_quality_score_empty(self):
+        """Test quality score is 1.0 when no checks were run."""
+        automation = PRAutomation()
+        assert automation._calculate_quality_score({}) == 1.0
+
+    def test_build_squash_commit_body(self):
+        """Test squash commit body includes PR reference and commit list."""
+        automation = PRAutomation()
+        commits = ["abc123 Fix bug", "def456 Add feature"]
+        body = automation._build_squash_commit_body(55, "feature/test", commits)
+        assert "PR #55" in body
+        assert "Fix bug" in body
+        assert "Add feature" in body
+        assert "Genesis PR Automation" in body
+
+    def test_build_squash_commit_body_many_commits(self):
+        """Test squash commit body truncates long commit lists."""
+        automation = PRAutomation()
+        commits = [f"sha{i} commit {i}" for i in range(30)]
+        body = automation._build_squash_commit_body(10, "feature/many", commits)
+        assert "and 10 more commits" in body
+
+    def test_singleton_instance(self):
+        """Test the module-level singleton is a PRAutomation instance."""
+        from genesis.core.pr_automation import pr_automation
+        assert isinstance(pr_automation, PRAutomation)
