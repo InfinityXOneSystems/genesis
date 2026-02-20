@@ -10,18 +10,26 @@ def test_agent_team_initialization():
     """Test that agent team initializes correctly."""
     team = AgentTeam()
     assert team is not None
-    assert len(team.personas) == 5
+    assert len(team.personas) == 11  # 5 original + 6 DevOps agents
 
 
 def test_list_personas():
     """Test listing all available personas."""
     personas = agent_team.list_personas()
-    assert len(personas) == 5
+    assert len(personas) == 11  # 5 original + 6 DevOps agents
+    # Original agents
     assert 'chief_architect' in personas
     assert 'frontend_lead' in personas
     assert 'backend_lead' in personas
     assert 'devsecops_engineer' in personas
     assert 'qa_engineer' in personas
+    # DevOps team agents
+    assert 'workflow_analyzer' in personas
+    assert 'auto_diagnostician' in personas
+    assert 'auto_healer' in personas
+    assert 'conflict_resolver' in personas
+    assert 'auto_validator' in personas
+    assert 'auto_merger' in personas
 
 
 def test_get_persona():

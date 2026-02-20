@@ -1,0 +1,187 @@
+name: Infinity Orchestrator — GitHub App Integration
+
+# Handles inbound dispatch events from the Infinity Orchestrator GitHub App
+# and exposes a natural-language control plane for autonomous agents.
+#
+# Trigger via the app's `repository_dispatch` webhook with one of the
+# supported event types listed below, or run manually from the Actions tab.
+
+on:
+  repository_dispatch:
+    types:
+      - infinity-sync          # full org sync
+      - infinity-loop          # run genesis autonomous loop
+      - infinity-heal          # run heal phase only
+      - infinity-deploy        # run deploy phase only
+      - infinity-status        # emit system status
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Natural-language command (sync | loop | heal | deploy | status)'
+        required: true
+        default: 'status'
+        type: choice
+        options:
+          - sync
+          - loop
+          - heal
+          - deploy
+          - status
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  # ── Route command ────────────────────────────────────────────────────
+  route:
+    name: 🧭 Route Command
+    runs-on: ubuntu-latest
+
+    outputs:
+      command: ${{ steps.resolve.outputs.command }}
+
+    steps:
+      - name: Resolve command
+        id: resolve
+        run: |
+          # Prefer repository_dispatch event type, fall back to manual input
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            EVENT_TYPE="${{ github.event.action }}"
+            COMMAND="${EVENT_TYPE#infinity-}"   # strip "infinity-" prefix
+          else
+            COMMAND="${{ github.event.inputs.command }}"
+          fi
+          echo "command=$COMMAND" >> "$GITHUB_OUTPUT"
+          echo "🧭 Resolved command: $COMMAND"
+
+  # ── Sync ─────────────────────────────────────────────────────────────
+  sync:
+    name: 🪞 Org Sync
+    needs: route
+    if: needs.route.outputs.command == 'sync'
+    uses: ./.github/workflows/org-sync.yml
+    secrets: inherit
+
+  # ── Autonomous Loop ───────────────────────────────────────────────────
+  loop:
+    name: 🔄 Genesis Autonomous Loop
+    needs: route
+    if: needs.route.outputs.command == 'loop'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Configure Git
+        run: |
+          git config --global user.name  "Genesis Bot"
+          git config --global user.email "genesis-bot@infinityxonesystems.com"
+
+      - name: Run full autonomous loop
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python src/genesis/core/loop.py full
+
+  # ── Heal ──────────────────────────────────────────────────────────────
+  heal:
+    name: 🔧 Heal Phase
+    needs: route
+    if: needs.route.outputs.command == 'heal'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Configure Git
+        run: |
+          git config --global user.name  "Genesis Bot"
+          git config --global user.email "genesis-bot@infinityxonesystems.com"
+
+      - name: Run heal phase
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python src/genesis/core/loop.py heal
+
+  # ── Deploy ────────────────────────────────────────────────────────────
+  deploy:
+    name: 🚀 Deploy Phase
+    needs: route
+    if: needs.route.outputs.command == 'deploy'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Run deploy phase
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python src/genesis/core/loop.py deploy
+
+  # ── Status ────────────────────────────────────────────────────────────
+  status:
+    name: 📊 System Status
+    needs: route
+    if: needs.route.outputs.command == 'status'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - run: pip install -r requirements.txt
+
+      - name: Emit system status
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import sys, json
+          sys.path.insert(0, "src")
+          from genesis.core.orchestrator import orchestrator
+          from genesis.core.org_sync import org_sync
+
+          health = orchestrator.get_system_health()
+          mirror = org_sync.get_mirror_sync_status()
+
+          report = {"system_health": health, "mirror_status": mirror}
+          print(json.dumps(report, indent=2))
+
+          # Write to step summary
+          import os
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
+          with open(summary_path, "a") as fh:
+              fh.write("## 📊 Genesis System Status\n\n")
+              fh.write("```json\n")
+              fh.write(json.dumps(report, indent=2))
+              fh.write("\n```\n")
+          EOF

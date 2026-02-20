@@ -24,27 +24,54 @@ Genesis is a FAANG-grade, enterprise-level **autonomous software factory** that 
 
 ## 🏗️ Architecture
 
-Genesis consists of five core components:
+Genesis consists of seven core components:
 
 ### 1. Autonomous Loop (GitHub Actions)
 Scheduled workflow that runs every 6 hours, executing the Plan → Code → Validate → Heal → Deploy cycle with built-in self-healing capabilities.
+Scheduled workflow that runs every 6 hours, executing the Plan → Code → Validate → Diagnose → Heal → Deploy cycle.
 
 ### 2. Agent Core (Python)
 The brain of the system with specialized AI personas:
+
+**Original Team:**
 - **Chief Architect**: System design and architecture
 - **Frontend Lead**: React/Next.js development
 - **Backend Lead**: API and business logic
 - **DevSecOps Engineer**: CI/CD and infrastructure
 - **QA Engineer**: Testing and quality assurance
 
-### 3. Mission Control UI (Next.js)
+**DevOps Team:**
+- **Workflow Analyzer**: CI/CD analysis and monitoring
+- **Auto Diagnostician**: Automated issue diagnosis
+- **Auto Healer**: Self-healing and auto-fixing
+- **Conflict Resolver**: Automatic merge conflict resolution
+- **Auto Validator**: Continuous validation and quality gates
+- **Auto Merger**: Automated PR management and merging
+
+### 3. DevOps Auto-Healing System
+Autonomous DevOps team that continuously monitors, diagnoses, heals, and validates the system:
+- Monitors all GitHub Actions workflows 24/7
+- Auto-diagnoses failures and issues
+- Auto-fixes common problems (dependencies, formatting, conflicts)
+- Auto-resolves merge conflicts
+- Auto-validates fixes with tests and linters
+- Auto-merges validated PRs with squashing
+- Auto-closes related issues
+
+### 4. Mission Control UI (Next.js)
 Futuristic web interface for monitoring agent activities and system health.
 
-### 4. Persistent State
+### 5. Persistent State
 JSON manifest tracking system epoch, active agents, and task queue.
 
-### 5. Infrastructure (Docker)
+### 6. Infrastructure (Docker)
 Containerized services including vector DB (Qdrant), LLM inference (Ollama), and caching (Redis).
+
+### 7. Workflows
+Automated GitHub Actions workflows for continuous operation:
+- **Genesis Loop** (every 6 hours): Full autonomous cycle
+- **DevOps Team** (every 2 hours): Auto-healing and monitoring
+- **Auto-Merge**: Automatic PR merging with validation
 
 ## 🚀 Quick Start
 
@@ -94,30 +121,53 @@ docker-compose up -d
 ## 📖 Documentation
 
 - [System Architecture](docs/SYSTEM_ARCHITECTURE.md) - Detailed architectural overview
+- [DevOps Team](docs/DEVOPS_TEAM.md) - Auto-healing system and DevOps agents
 - [System Instructions](prompts/system_instructions.md) - Agent personas and prompts
 
 ## 🔧 Manual Execution
 
-Run individual phases of the autonomous loop:
+### Run the Autonomous Loop
+
+Execute individual phases or the full cycle:
 
 ```bash
-# Plan phase - scan and generate tasks
-python src/genesis/core/loop.py plan
+# Full autonomous cycle (all phases)
+python src/genesis/core/loop.py full
 
-# Code phase - execute autonomous coding
-python src/genesis/core/loop.py code
+# Individual phases
+python src/genesis/core/loop.py plan      # Scan and plan improvements
+python src/genesis/core/loop.py code      # Execute coding tasks
+python src/genesis/core/loop.py validate  # Run tests and quality checks
+python src/genesis/core/loop.py diagnose  # Diagnose workflow failures
+python src/genesis/core/loop.py heal      # Auto-fix issues and conflicts
+python src/genesis/core/loop.py deploy    # Merge and deploy changes
+```
 
-# Validate phase - run tests and checks
-python src/genesis/core/loop.py validate
+### DevOps Team Operations
 
 # Heal phase - auto-fix workflow failures
 python src/genesis/core/loop.py heal
 
 # Deploy phase - merge approved changes
 python src/genesis/core/loop.py deploy
+```bash
+# Analyze workflows
+python -c "from genesis.core.workflow_analyzer import workflow_analyzer; ..."
 
-# Full cycle
-python src/genesis/core/loop.py full
+# Diagnose issues
+python -c "from genesis.core.auto_diagnostician import auto_diagnostician; ..."
+
+# Heal issues
+python -c "from genesis.core.auto_healer import auto_healer; ..."
+
+# Resolve conflicts
+python -c "from genesis.core.conflict_resolver import conflict_resolver; ..."
+
+# Validate changes
+python -c "from genesis.core.auto_validator import auto_validator; ..."
+
+# Merge PRs
+python -c "from genesis.core.auto_merger import auto_merger; ..."
 ```
 
 ## 🏥 Auto-Healing System

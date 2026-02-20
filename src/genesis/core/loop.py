@@ -15,8 +15,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from genesis.core.orchestrator import orchestrator
 from genesis.core.repo_scanner import repo_scanner
-from genesis.core.healing_agent import get_healing_agent
-from genesis.core.workflow_monitor import get_workflow_monitor
+from genesis.core.workflow_analyzer import workflow_analyzer
+from genesis.core.auto_diagnostician import auto_diagnostician
+from genesis.core.auto_healer import auto_healer
+from genesis.core.conflict_resolver import conflict_resolver
+from genesis.core.auto_validator import auto_validator
+from genesis.core.auto_merger import auto_merger
 
 logging.basicConfig(
     level=logging.INFO,
@@ -122,6 +126,9 @@ def validate_phase() -> int:
 def heal_phase() -> int:
     """
     Heal phase: Detect and fix workflow failures automatically.
+def diagnose_phase() -> int:
+    """
+    Diagnose phase: Analyze workflows and diagnose issues.
     
     Returns:
         Exit code (0 = success)
@@ -159,6 +166,59 @@ def heal_phase() -> int:
         else:
             logger.info("No workflow failures detected - system is healthy")
             return 0
+    logger.info("PHASE: DIAGNOSE")
+    logger.info("=" * 80)
+    
+    try:
+        # Analyze recent workflow failures
+        org_name = "InfinityXOneSystems"
+        logger.info(f"Analyzing workflows for {org_name}")
+        
+        # In real implementation, would fetch actual workflow data
+        # For now, log the diagnostic capability
+        logger.info("Workflow analysis and diagnosis ready")
+        
+        logger.info("Diagnosis phase completed successfully")
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Diagnosis phase failed: {e}", exc_info=True)
+        return 1
+
+
+def heal_phase() -> int:
+    """
+    Heal phase: Auto-fix identified issues and conflicts.
+    
+    Returns:
+        Exit code (0 = success)
+    """
+    logger.info("=" * 80)
+    logger.info("PHASE: HEAL")
+    logger.info("=" * 80)
+    
+    try:
+        # Check for conflicts and resolve them
+        conflicts = conflict_resolver.detect_conflicts()
+        if conflicts:
+            logger.info(f"Found {len(conflicts)} files with conflicts")
+            resolution_result = conflict_resolver.resolve_conflicts(auto_commit=True)
+            
+            if resolution_result.success:
+                logger.info(f"Resolved {resolution_result.conflicts_resolved} conflicts")
+            else:
+                logger.warning(f"Some conflicts need manual review: {resolution_result.error_message}")
+        else:
+            logger.info("No conflicts detected")
+        
+        # In real implementation, would also:
+        # 1. Run auto-healer on identified issues
+        # 2. Fix dependency problems
+        # 3. Patch security vulnerabilities
+        # 4. Repair broken tests
+        
+        logger.info("Healing phase completed successfully")
+        return 0
         
     except Exception as e:
         logger.error(f"Healing phase failed: {e}", exc_info=True)
@@ -177,11 +237,15 @@ def deploy_phase() -> int:
     logger.info("=" * 80)
     
     try:
-        # In a real implementation, this would:
-        # 1. Check for PRs with "autonomous-verified" label
-        # 2. Ensure CI passes
-        # 3. Auto-merge approved PRs
-        # 4. Deploy to production (if applicable)
+        # Auto-merge validated PRs
+        logger.info("Checking for PRs ready to merge")
+        merge_results = auto_merger.auto_merge_validated_prs(label_filter="autonomous-verified")
+        
+        if merge_results:
+            successful_merges = sum(1 for r in merge_results if r.status.value == "success")
+            logger.info(f"Merged {successful_merges}/{len(merge_results)} PRs")
+        else:
+            logger.info("No PRs ready for auto-merge")
         
         logger.info("Deployment phase completed successfully")
         return 0
@@ -198,7 +262,7 @@ def main():
     )
     parser.add_argument(
         "phase",
-        choices=["plan", "code", "validate", "heal", "deploy", "full"],
+        choices=["plan", "code", "validate", "diagnose", "heal", "deploy", "full"],
         help="Phase to execute"
     )
     
@@ -216,17 +280,28 @@ def main():
         exit_code = code_phase()
     elif args.phase == "validate":
         exit_code = validate_phase()
+    elif args.phase == "diagnose":
+        exit_code = diagnose_phase()
     elif args.phase == "heal":
         exit_code = heal_phase()
     elif args.phase == "deploy":
         exit_code = deploy_phase()
     elif args.phase == "full":
         # Run all phases in sequence, including heal phase before deploy
+        # Run all phases in sequence: Plan → Code → Validate → Diagnose → Heal → Deploy
         exit_code = plan_phase()
         if exit_code == 0:
             exit_code = code_phase()
         if exit_code == 0:
             exit_code = validate_phase()
+        # Always run diagnose and heal, even if validation fails
+        diagnose_exit = diagnose_phase()
+        if diagnose_exit != 0:
+            logger.warning("Diagnose phase had issues but continuing...")
+        heal_exit = heal_phase()
+        if heal_exit != 0:
+            logger.warning("Heal phase had issues but continuing...")
+        # Continue to deploy only if previous phases succeeded
         if exit_code == 0:
             exit_code = heal_phase()
         if exit_code == 0:

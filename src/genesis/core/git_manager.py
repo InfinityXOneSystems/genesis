@@ -9,7 +9,7 @@ import os
 import subprocess
 import logging
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -204,7 +204,7 @@ class GitManager:
             "head": head_branch,
             "base": base_branch,
             "state": "open",
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "html_url": f"https://github.com/InfinityXOneSystems/genesis/pull/1"
         }
         

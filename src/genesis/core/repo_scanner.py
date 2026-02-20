@@ -9,7 +9,13 @@ import os
 import logging
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+try:
+    from github import Github, Auth  # type: ignore
+    _PYGITHUB_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PYGITHUB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +64,7 @@ class RepoScanner:
     
     def list_organization_repos(self, org_name: str) -> List[RepositoryInfo]:
         """
-        List all repositories in a GitHub organization.
+        List all repositories in a GitHub organization via the GitHub API.
         
         Args:
             org_name: Name of the GitHub organization
@@ -68,13 +74,36 @@ class RepoScanner:
         """
         logger.info(f"Scanning repositories for organization: {org_name}")
         
-        # In a real implementation, this would use the GitHub API:
-        # GET /orgs/{org}/repos
-        # For now, return a placeholder
+        repos: List[RepositoryInfo] = []
         
-        repos = []
+        if not self.github_token:
+            logger.warning("No GitHub token — returning empty repo list")
+            return repos
         
-        # Placeholder for demonstration
+        try:
+            gh = Github(auth=Auth.Token(self.github_token))
+            org = gh.get_organization(org_name)
+            
+            for repo in org.get_repos(type="all"):
+                repos.append(RepositoryInfo(
+                    name=repo.name,
+                    full_name=repo.full_name,
+                    description=repo.description,
+                    language=repo.language,
+                    stars=repo.stargazers_count,
+                    forks=repo.forks_count,
+                    open_issues=repo.open_issues_count,
+                    last_updated=repo.updated_at.isoformat() if repo.updated_at else "",
+                    topics=list(repo.get_topics()),
+                    has_issues=repo.has_issues,
+                    has_projects=repo.has_projects,
+                    has_wiki=repo.has_wiki,
+                ))
+        except ImportError:
+            logger.error("PyGithub not installed — install with: pip install PyGithub")
+        except Exception as exc:
+            logger.error("GitHub API error listing %s repos: %s", org_name, type(exc).__name__)
+        
         logger.info(f"Found {len(repos)} repositories")
         return repos
     
@@ -92,30 +121,56 @@ class RepoScanner:
         
         analysis = {
             "repository": repo_full_name,
-            "analyzed_at": datetime.utcnow().isoformat(),
+            "analyzed_at": datetime.now(timezone.utc).isoformat(),
             "health_score": 0.0,
             "opportunities": [],
             "metrics": {}
         }
         
-        # In a real implementation, this would:
-        # 1. Check for missing documentation
-        # 2. Analyze code quality issues
-        # 3. Identify outdated dependencies
-        # 4. Check for missing tests
-        # 5. Review security vulnerabilities
-        # 6. Analyze CI/CD pipeline health
-        
-        opportunities = []
-        
-        # Example opportunity detection
-        opportunities.append({
-            "type": "documentation",
-            "severity": "medium",
-            "title": "Missing CONTRIBUTING.md",
-            "description": "Repository lacks contribution guidelines",
-            "suggested_action": "Create CONTRIBUTING.md with guidelines"
-        })
+        # Attempt to enrich analysis via GitHub API when a token is available
+        opportunities: List[Dict[str, Any]] = []
+        if self.github_token:
+            try:
+                gh = Github(auth=Auth.Token(self.github_token))
+                repo = gh.get_repo(repo_full_name)
+
+                # Populate basic metrics
+                analysis["metrics"] = {
+                    "stars": repo.stargazers_count,
+                    "forks": repo.forks_count,
+                    "open_issues": repo.open_issues_count,
+                    "language": repo.language,
+                    "last_push": repo.pushed_at.isoformat() if repo.pushed_at else None,
+                    "has_ci": True,  # presence of .github/workflows confirms CI
+                }
+
+                # Check for missing standard files
+                standard_files = ["README.md", "CONTRIBUTING.md", "LICENSE", ".github/workflows"]
+                for std_file in standard_files:
+                    try:
+                        repo.get_contents(std_file)
+                    except Exception:
+                        opportunities.append({
+                            "type": "documentation",
+                            "severity": "medium",
+                            "title": f"Missing {std_file}",
+                            "description": f"Repository lacks {std_file}",
+                            "suggested_action": f"Create {std_file}",
+                        })
+
+            except ImportError:
+                logger.warning("PyGithub not installed — skipping API enrichment")
+            except Exception as exc:
+                logger.warning("API enrichment failed for %s: %s", repo_full_name, type(exc).__name__)
+        else:
+            # No token — add a generic placeholder opportunity
+            opportunities.append({
+                "type": "documentation",
+                "severity": "medium",
+                "title": "Missing CONTRIBUTING.md",
+                "description": "Repository lacks contribution guidelines",
+                "suggested_action": "Create CONTRIBUTING.md with guidelines",
+            })
         
         analysis["opportunities"] = opportunities
         analysis["health_score"] = self._calculate_health_score(analysis)
