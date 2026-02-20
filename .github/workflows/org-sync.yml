@@ -1,0 +1,193 @@
+name: Org Sync — Mirror & Standards Propagation
+
+# Mirrors genesis → infinity-factory and propagates enterprise-standard
+# workflow files to every repository in the InfinityXOneSystems org.
+# Triggered automatically on every push to main, or manually at any time.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Sync action'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - full          # mirror + propagate workflows
+          - mirror-only   # only mirror genesis → infinity-factory
+          - workflows-only # only propagate enterprise workflows
+  workflow_call:
+    inputs:
+      action:
+        description: 'Sync action'
+        required: false
+        default: 'full'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  # ── 1. Mirror genesis → infinity-factory ────────────────────────────
+  mirror:
+    name: 🪞 Mirror genesis → infinity-factory
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      github.event.inputs.action == 'full' ||
+      github.event.inputs.action == 'mirror-only'
+
+    steps:
+      - name: Checkout genesis (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push mirror to infinity-factory
+        env:
+          # ORG_SYNC_TOKEN must be a PAT (or GitHub App token) with repo write
+          # access to InfinityXOneSystems/infinity-factory.
+          # Add it as a repository secret named ORG_SYNC_TOKEN.
+          MIRROR_TOKEN: ${{ secrets.ORG_SYNC_TOKEN }}
+        run: |
+          git config --global user.name  "Genesis Bot"
+          git config --global user.email "genesis-bot@infinityxonesystems.com"
+
+          MIRROR_URL="https://x-access-token:${MIRROR_TOKEN}@github.com/InfinityXOneSystems/infinity-factory.git"
+
+          # Push all refs; --mirror keeps branches and tags in sync
+          git push --mirror "$MIRROR_URL"
+          echo "✅ Mirror push to infinity-factory complete"
+
+  # ── 2. Propagate enterprise workflows to all org repos ───────────────
+  propagate-workflows:
+    name: 📡 Propagate enterprise workflows
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'push' ||
+      github.event.inputs.action == 'full' ||
+      github.event.inputs.action == 'workflows-only'
+
+    steps:
+      - name: Checkout genesis
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Propagate standard workflows
+        env:
+          GITHUB_TOKEN: ${{ secrets.ORG_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import os, sys, json
+          from pathlib import Path
+
+          sys.path.insert(0, "src")
+          from genesis.core.org_sync import org_sync, SHARED_WORKFLOW_FILES
+
+          # Build content map from local workflow files
+          workflow_contents = {}
+          for wf_path in SHARED_WORKFLOW_FILES:
+              p = Path(wf_path)
+              if p.exists():
+                  workflow_contents[wf_path] = p.read_text()
+              else:
+                  print(f"⚠️  Skipping missing file: {wf_path}")
+
+          if not workflow_contents:
+              print("No workflow files found — nothing to propagate")
+              sys.exit(0)
+
+          # Exclude genesis itself to avoid self-referential loops
+          skip = ["InfinityXOneSystems/genesis"]
+          report = org_sync.sync_workflows_to_all_repos(workflow_contents, skip_repos=skip)
+
+          # Write report as step summary
+          summary_lines = [
+              "## 📡 Org Workflow Sync Report",
+              f"- **Total repos**: {report.total}",
+              f"- ✅ Succeeded: {report.succeeded}",
+              f"- ⏭️  Skipped: {report.skipped}",
+              f"- ❌ Failed: {report.failed}",
+              "",
+              "### Per-repo results",
+          ]
+          for r in report.results:
+              icon = {"success": "✅", "skipped": "⏭️", "failed": "❌"}.get(r.status.value, "⏳")
+              summary_lines.append(f"- {icon} `{r.repo_name}` — {r.message or r.status.value}")
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/stdout")
+          with open(summary_path, "a") as fh:
+              fh.write("\n".join(summary_lines) + "\n")
+
+          print(json.dumps(report.to_dict(), indent=2))
+
+          if report.failed > 0:
+              sys.exit(1)
+          EOF
+
+  # ── 3. Verify mirror is reachable ────────────────────────────────────
+  verify-mirror:
+    name: 🔍 Verify infinity-factory mirror
+    runs-on: ubuntu-latest
+    needs: [mirror]
+    if: always()
+
+    steps:
+      - name: Checkout genesis
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check mirror status
+        env:
+          GITHUB_TOKEN: ${{ secrets.ORG_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import sys, json
+          sys.path.insert(0, "src")
+          from genesis.core.org_sync import org_sync
+
+          status = org_sync.get_mirror_sync_status()
+          print(json.dumps(status, indent=2))
+
+          if not status.get("reachable"):
+              print("⚠️  Mirror not reachable — check ORG_SYNC_TOKEN secret")
+          else:
+              print("✅ infinity-factory mirror is reachable")
+          EOF
+
+  # ── 4. Summary ───────────────────────────────────────────────────────
+  summary:
+    name: 📊 Sync Summary
+    runs-on: ubuntu-latest
+    needs: [mirror, propagate-workflows, verify-mirror]
+    if: always()
+
+    steps:
+      - name: Write summary
+        run: |
+          echo "## 🪞 Org Sync Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Result |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Mirror genesis → infinity-factory | ${{ needs.mirror.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Propagate enterprise workflows     | ${{ needs.propagate-workflows.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Verify mirror reachable            | ${{ needs.verify-mirror.result }} |" >> $GITHUB_STEP_SUMMARY
