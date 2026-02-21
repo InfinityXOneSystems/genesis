@@ -205,9 +205,12 @@ jobs:
   validate:
     name: ✅ Validate Code
     runs-on: ubuntu-latest
-    needs: [analyze]
-    # Run even if conflict resolution was skipped (no conflicts)
-    if: always() && needs.analyze.result == 'success'
+    needs: [analyze, resolve-conflicts]
+    # Run when analyze succeeded and conflict resolution either succeeded or was skipped (no conflicts)
+    if: |
+      always() &&
+      needs.analyze.result == 'success' &&
+      (needs.resolve-conflicts.result == 'success' || needs.resolve-conflicts.result == 'skipped')
 
     outputs:
       validation-passed: ${{ steps.gate.outputs.passed }}
@@ -319,7 +322,7 @@ jobs:
   auto-squash-merge:
     name: 🚀 Auto Squash-Merge
     runs-on: ubuntu-latest
-    needs: [analyze, validate]
+    needs: [analyze, resolve-conflicts, validate]
     # Only merge when validation gate passed AND no unresolved conflicts
     if: |
       always() &&
@@ -425,7 +428,7 @@ jobs:
   summary:
     name: 📊 Pipeline Summary
     runs-on: ubuntu-latest
-    needs: [analyze, validate, auto-squash-merge]
+    needs: [analyze, resolve-conflicts, validate, auto-squash-merge]
     if: always()
 
     steps:
@@ -434,8 +437,9 @@ jobs:
         with:
           script: |
             const results = {
-              analyze:           '${{ needs.analyze.result }}',
-              validate:          '${{ needs.validate.result }}',
+              analyze:             '${{ needs.analyze.result }}',
+              'resolve-conflicts': '${{ needs.resolve-conflicts.result }}',
+              validate:            '${{ needs.validate.result }}',
               'auto-squash-merge': '${{ needs.auto-squash-merge.result }}',
             };
             const icon = r => r === 'success' ? '✅' : r === 'skipped' ? '⏭️' : '❌';
